@@ -21,26 +21,27 @@ jobs:
             libssl-dev libelf-dev dwarves \
             gcc-aarch64-linux-gnu
 
-      - name: Get Linux kernel
+      - name: Download Linux 7.1.5
         run: |
           git clone --depth 1 --branch v7.1.5 \
             https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux
 
-      - name: Get Orange Pi patches
+      - name: Download Orange Pi kernel files
         run: |
           git clone --depth 1 \
-            https://github.com/jonas5/orangepi-4pro-kernel.git a733
+            https://github.com/jonas5/orangepi-4pro-armbian.git a733
 
-      - name: Apply board patch
+      - name: Apply Orange Pi patch
         run: |
           cd linux
-          git apply --check ../a733/patch/opi4pro-7.1.5.patch
-          git apply ../a733/patch/opi4pro-7.1.5.patch
+          git apply --check ../a733/patch/kernel/sun60iw2-next/opi4pro-7.1.5.patch
+          git apply ../a733/patch/kernel/sun60iw2-next/opi4pro-7.1.5.patch
 
       - name: Configure kernel
         run: |
           cd linux
-          make ARCH=arm64 orangepi_4pro_defconfig
+          cp ../a733/config/kernel/linux-sun60iw2-next-a733.config .config
+
           scripts/config --enable EROFS_FS
           scripts/config --enable BLK_DEV_DM
           scripts/config --enable OVERLAY_FS
@@ -61,9 +62,10 @@ jobs:
           scripts/config --enable SECURITY_APPARMOR
           scripts/config --enable VETH
           scripts/config --enable BRIDGE
-          make ARCH=arm64 olddefconfig
 
-      - name: Check HAOS requirements
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+
+      - name: Verify HAOS requirements
         run: |
           cd linux
           for option in \
@@ -79,14 +81,13 @@ jobs:
           done
           echo "All required kernel options are enabled."
 
-      - name: Compile kernel and device tree
+      - name: Compile kernel
         run: |
           cd linux
-          make -j2 ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+          make -j2 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             Image dtbs modules
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: orangepi4pro-kernel-test
