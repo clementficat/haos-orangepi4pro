@@ -1,0 +1,97 @@
+
+name: Orange Pi 4 Pro - Kernel compatibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex git make \
+            libssl-dev libelf-dev dwarves \
+            gcc-aarch64-linux-gnu
+
+      - name: Get Linux kernel
+        run: |
+          git clone --depth 1 --branch v7.1.5 \
+            https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git linux
+
+      - name: Get Orange Pi patches
+        run: |
+          git clone --depth 1 \
+            https://github.com/jonas5/orangepi-4pro-kernel.git a733
+
+      - name: Apply board patch
+        run: |
+          cd linux
+          git apply --check ../a733/patch/opi4pro-7.1.5.patch
+          git apply ../a733/patch/opi4pro-7.1.5.patch
+
+      - name: Configure kernel
+        run: |
+          cd linux
+          make ARCH=arm64 orangepi_4pro_defconfig
+          scripts/config --enable EROFS_FS
+          scripts/config --enable BLK_DEV_DM
+          scripts/config --enable OVERLAY_FS
+          scripts/config --enable SQUASHFS
+          scripts/config --enable EXT4_FS
+          scripts/config --enable BLK_DEV_LOOP
+          scripts/config --enable CGROUPS
+          scripts/config --enable NAMESPACES
+          scripts/config --enable USER_NS
+          scripts/config --enable PID_NS
+          scripts/config --enable NET_NS
+          scripts/config --enable IPC_NS
+          scripts/config --enable UTS_NS
+          scripts/config --enable SECCOMP
+          scripts/config --enable SECCOMP_FILTER
+          scripts/config --enable SECURITY
+          scripts/config --enable SECURITYFS
+          scripts/config --enable SECURITY_APPARMOR
+          scripts/config --enable VETH
+          scripts/config --enable BRIDGE
+          make ARCH=arm64 olddefconfig
+
+      - name: Check HAOS requirements
+        run: |
+          cd linux
+          for option in \
+            EROFS_FS BLK_DEV_DM OVERLAY_FS SQUASHFS \
+            EXT4_FS BLK_DEV_LOOP CGROUPS NAMESPACES \
+            USER_NS PID_NS NET_NS IPC_NS UTS_NS \
+            SECCOMP SECCOMP_FILTER SECURITY_APPARMOR \
+            VETH BRIDGE; do
+            if ! grep -q "^CONFIG_${option}=y$" .config; then
+              echo "MISSING: CONFIG_${option}"
+              exit 1
+            fi
+          done
+          echo "All required kernel options are enabled."
+
+      - name: Compile kernel and device tree
+        run: |
+          cd linux
+          make -j2 ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            Image dtbs modules
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangepi4pro-kernel-test
+          path: |
+            linux/arch/arm64/boot/Image
+            linux/arch/arm64/boot/dts/allwinner/sun60i-a733-orangepi-4-pro.dtb
+            linux/.config
+            linux/System.map
